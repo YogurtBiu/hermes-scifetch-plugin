@@ -2,9 +2,9 @@
   "plugin_name": "scifetch-paper",
   "plugin_version": "0.2.28",
   "sha256": {
-    ".gitattributes": "a79691a93b46e49ce460c26ef22afcc03d6eca1e63bf2edbc20e96159510f6c9",
+    ".gitattributes": "c6fa659d8abb7724c8160fa2a3bf36d0459aae228fd4f7d2ba48b8ec440204c1",
     ".github/workflows/windows.yml": "17fb6fb29eee442ca9772eaf01104e41dc8c32f3a18748b1f0d4bb80c7baeb6d",
-    "README.md": "0120054e65bc6559d43a54bd7f81447fe77ce5b45981a6ec72098626b353c29d",
+    "README.md": "fc7528dc32cce82721d8ebe23eb3ba7af625665597f819194749086601768259",
     "__init__.py": "6e61650f039cdd5d16a80cb41932401e77413600a5c444f4d85ae21292276d1f",
     "auth.py": "51bdf66ae92569741070cdc2fa1c2f755db839a474fb359806d07aa100f85a84",
     "client.py": "3e8247918de6a90064afbf674ca1cda32ffe31e15c0e1f15c01c9ac46ddb3306",
@@ -26,7 +26,7 @@
     "tool.py": "c78b137294bd1677285a8626aee3cf46b14b05d77aa7608ae5edb0f85b3ae5da",
     "trust.py": "9d14be8f0892ab79e27bda4014da1cbeb30e151da823e3ebbb8b8c6b9041ba77"
   },
-  "source_commit": "6f4fad504f8acf39efd911e98abd6f9fd2e07df8",
+  "source_commit": "3bc709469c9ece5daa7f90f34789e9c949862119",
   "source_path": "plugins/scifetch-paper",
   "source_repository": "YogurtBiu/LabVault"
 }

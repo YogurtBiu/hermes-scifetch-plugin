@@ -1,1 +1,8 @@
-* text eol=lf
+* -text
+/.gitattributes text eol=lf
+/README.md text eol=lf
+/SOURCE.json text eol=lf
+/*.py text eol=lf
+/plugin.yaml text eol=lf
+/.github/workflows/*.yml text eol=lf
+/tests/*.py text eol=lf

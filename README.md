@@ -74,7 +74,7 @@ inspect an existing request.
 Runtime compatibility includes the exact audited Hermes
 `0.22.5@bf0203a794a07aac3ff764972ab9087baa4e4f4e` point and the other exact
 points listed under [Stock Compatibility](#stock-compatibility). Use Hermes'
-Python environment with `httpx` available. Version `0.2.28` adds a Windows native
+Python environment with `httpx` available. Plugin `0.2.28` adds a Windows native
 backend targeting x64 Hermes `0.23.0` and Python `3.14.9`. It uses OS file locks
 and read-only process queries while macOS/Linux retain the POSIX backend.
 The [Windows native workflow](https://github.com/YogurtBiu/hermes-scifetch-plugin/actions/workflows/windows.yml)
