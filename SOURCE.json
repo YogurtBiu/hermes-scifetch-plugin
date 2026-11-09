@@ -2,7 +2,8 @@
   "plugin_name": "scifetch-paper",
   "plugin_version": "0.2.28",
   "sha256": {
-    ".github/workflows/windows.yml": "080742243747a53089a7067dd4a4ef016603c9027cadbb447f945a796c10b33d",
+    ".gitattributes": "a79691a93b46e49ce460c26ef22afcc03d6eca1e63bf2edbc20e96159510f6c9",
+    ".github/workflows/windows.yml": "17fb6fb29eee442ca9772eaf01104e41dc8c32f3a18748b1f0d4bb80c7baeb6d",
     "README.md": "0120054e65bc6559d43a54bd7f81447fe77ce5b45981a6ec72098626b353c29d",
     "__init__.py": "6e61650f039cdd5d16a80cb41932401e77413600a5c444f4d85ae21292276d1f",
     "auth.py": "51bdf66ae92569741070cdc2fa1c2f755db839a474fb359806d07aa100f85a84",
@@ -21,11 +22,11 @@
     "public_errors.py": "3b0ad5ecaf8a5bb78bc8d2ed39311924a60e5de1f04a47a834406e1e6664c546",
     "response_output.py": "4f9132d33033ece2790f7a83ad6ea7d45e3a0686cff188a5330635013b3c7e05",
     "state.py": "bda990ca612b5061ee7a5b1a7b1d6d8ce313789fc3bf9491effb2f7e4b94758d",
-    "tests/test_windows_native.py": "781d8bade0c1a959412ba948f2a29930d749d1be80e99a06c8824d240be5b79d",
+    "tests/test_windows_native.py": "d4bee7dbb7ddf938bb4fe4fd45a08faae0fb814a5d2a739e980a36283c2c6562",
     "tool.py": "c78b137294bd1677285a8626aee3cf46b14b05d77aa7608ae5edb0f85b3ae5da",
     "trust.py": "9d14be8f0892ab79e27bda4014da1cbeb30e151da823e3ebbb8b8c6b9041ba77"
   },
-  "source_commit": "2b5ffff91775e8c62305f7fb61e0d5ae7d4c2e18",
+  "source_commit": "6f4fad504f8acf39efd911e98abd6f9fd2e07df8",
   "source_path": "plugins/scifetch-paper",
   "source_repository": "YogurtBiu/LabVault"
 }

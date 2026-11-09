@@ -48,6 +48,9 @@ jobs:
             "GIT_CONFIG_GLOBAL=NUL"
             "GIT_CONFIG_NOSYSTEM=1"
             "GIT_TERMINAL_PROMPT=0"
+            "GIT_CONFIG_COUNT=1"
+            "GIT_CONFIG_KEY_0=core.autocrlf"
+            "GIT_CONFIG_VALUE_0=true"
             "SCIFETCH_TEST_HERMES=$env:GITHUB_WORKSPACE\hermes-host"
           ) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           python -m pip install --disable-pip-version-check uv

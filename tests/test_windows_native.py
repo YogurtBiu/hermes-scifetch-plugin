@@ -7,6 +7,7 @@ import importlib
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,7 @@ import unittest
 from pathlib import Path
 from types import ModuleType
 from typing import Any
+from unittest.mock import patch
 
 PLUGIN = Path(os.environ.get("SCIFETCH_TEST_PLUGIN", Path(__file__).resolve().parents[1]))
 
@@ -39,6 +41,108 @@ def child(mode: str, root: Path) -> None:
         instruction = sys.stdin.read(1)
         if instruction == "x":
             os._exit(0)
+
+
+def upgrade_state(profile: Path, proof_path: Path, *, verify: bool) -> None:
+    """Seed or inspect an installed plugin using offline credentials and receipts."""
+    state_module = load_module("state")
+    outbox_module = load_module("outbox")
+    plugin = profile / "plugins" / "scifetch-paper"
+    names = [
+        ".env",
+        "config.yaml",
+        "plugins/scifetch-paper/state.json",
+        "plugins/scifetch-paper/delivery_outbox.sqlite3",
+    ]
+    if verify:
+        proof = json.loads(proof_path.read_text(encoding="utf-8"))
+        for name, digest in proof["sha256"].items():
+            actual = hashlib.sha256((profile / name).read_bytes()).hexdigest()
+            if actual != digest:
+                raise AssertionError(f"Official update changed retained state: {name}")
+        store = outbox_module.OutboxStore(plugin / "delivery_outbox.sqlite3", "upgrade-install")
+        for key, expected in proof["records"].items():
+            if store.get_delivery(key).state != expected:
+                raise AssertionError(f"Delivery observation changed: {key}")
+        if len(store.pending_audits()) != 1:
+            raise AssertionError("The native acceptance audit was not retained")
+        with store.sender_lock():
+            store.recover("after-upgrade")
+            if store.claim_next("after-upgrade") is not None:
+                raise AssertionError("Upgrade requeued an accepted or unknown native attempt")
+        print(
+            "Official Git update retained profile, device state, native receipt and unknown attempt."
+        )
+        return
+
+    (profile / ".env").write_text(
+        "SCIFETCH_TRUST_MODE=personal_instance\nSCIFETCH_SERVER_URL=https://offline.example.test\n",
+        encoding="utf-8",
+    )
+    state_module.save_state(
+        plugin / "state.json",
+        state_module.PluginState(
+            server_url="https://offline.example.test",
+            device_id="upgrade-device",
+            access_token="offline-access",
+            refresh_token="offline-refresh",
+            access_expires_at="2099-01-01T00:00:00+00:00",
+            refresh_expires_at="2099-02-01T00:00:00+00:00",
+            trust_mode="personal_instance",
+            installation_id="upgrade-install",
+        ),
+    )
+    store = outbox_module.OutboxStore(plugin / "delivery_outbox.sqlite3", "upgrade-install")
+    target = outbox_module.TargetBinding("upgrade-install", "weixin", "chat", "user", "dm")
+    records: dict[str, str] = {}
+    with store.sender_lock():
+        for outcome in ["accepted", "unknown"]:
+            body = f"offline-{outcome}".encode()
+            artifact = outbox_module.Artifact(
+                f"file-{outcome}",
+                f"artifact-{outcome}",
+                "MAIN",
+                hashlib.sha256(body).hexdigest(),
+                len(body),
+                "application/pdf",
+            )
+            scope = outbox_module.GateScope(
+                "server",
+                "account",
+                "upgrade-install",
+                f"request-{outcome}",
+                "item",
+                "acquisition",
+                "generation",
+                target.binding_id,
+            )
+            record = store.enqueue(scope, target, artifact)
+            staged = profile / f"{outcome}.pdf"
+            staged.write_bytes(body)
+            store.record_staged(record.key, staged)
+            attempt = store.claim_next("before-upgrade")
+            if attempt is None or not store.begin_native(attempt.attempt_id, attempt.start_token):
+                raise AssertionError("Could not seed the offline native attempt")
+            if outcome == "accepted":
+                receipt = outbox_module.NativeReceipt("send_document", "offline-upgrade-test")
+                if not store.accept(attempt.attempt_id, receipt):
+                    raise AssertionError("Could not seed the offline native receipt")
+            else:
+                store.mark_unknown(attempt.attempt_id, "offline-unconfirmed", stopped=True)
+            records[record.key] = outcome
+    proof_path.write_text(
+        json.dumps(
+            {
+                "records": records,
+                "sha256": {
+                    name: hashlib.sha256((profile / name).read_bytes()).hexdigest()
+                    for name in names
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
 
 class NativeContracts(unittest.TestCase):
@@ -123,6 +227,24 @@ class NativeContracts(unittest.TestCase):
     def test_current_process_has_no_exit_proof(self) -> None:
         self.assertFalse(self.platform.process_exited(os.getpid()))
         self.assertFalse(self.platform.process_exited(0))
+
+    @unittest.skipUnless(os.name == "nt", "Windows API error branch contract")
+    def test_windows_uncertain_process_queries_preserve_unknown(self) -> None:
+        api = self.platform._kernel32
+        for error in [5, 299]:
+            with (
+                self.subTest(error=error),
+                patch.object(api, "OpenProcess", return_value=None),
+                patch.object(self.platform.ctypes, "get_last_error", return_value=error),
+            ):
+                self.assertFalse(self.platform.process_exited(12345))
+        with (
+            patch.object(api, "OpenProcess", return_value=123),
+            patch.object(api, "WaitForSingleObject", return_value=0xFFFFFFFF),
+            patch.object(api, "CloseHandle") as close,
+        ):
+            self.assertFalse(self.platform.process_exited(12345))
+            close.assert_called_once_with(123)
 
     def test_private_create_preserves_unicode_path_and_exclusive_creation(self) -> None:
         path = self.root / "记录 文件.json"
@@ -251,9 +373,83 @@ class NativeContracts(unittest.TestCase):
         for name, digest in source["sha256"].items():
             self.assertEqual(hashlib.sha256((PLUGIN / name).read_bytes()).hexdigest(), digest)
 
+    @unittest.skipUnless(
+        os.environ.get("SCIFETCH_TEST_HERMES"), "Run inside the official Hermes CI host"
+    )
+    def test_official_git_update_preserves_native_state(self) -> None:
+        source = self.root / "local-source"
+        source.mkdir()
+        manifest = json.loads((PLUGIN / "SOURCE.json").read_text(encoding="utf-8"))
+        for name in [*manifest["sha256"], "SOURCE.json"]:
+            destination = source / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(PLUGIN / name, destination)
+
+        def git(*args: str) -> str:
+            return subprocess.check_output(
+                ["git", "-C", str(source), *args], text=True, encoding="utf-8"
+            ).strip()
+
+        git("init", "-q", "-b", "main")
+        git("config", "user.name", "Offline upgrade test")
+        git("config", "user.email", "offline@example.test")
+        git("add", ".")
+        git("commit", "-qm", "Initial offline plugin snapshot")
+        home = self.root / "upgrade-home"
+        home.mkdir()
+        profile = home / "profile"
+        env = dict(os.environ)
+        env.update(
+            {
+                "HOME": str(home),
+                "USERPROFILE": str(home),
+                "HERMES_HOME": str(profile),
+                "LOCALAPPDATA": str(home / "AppData/Local"),
+                "APPDATA": str(home / "AppData/Roaming"),
+                "SCIFETCH_TEST_PLUGIN": str(profile / "plugins/scifetch-paper"),
+            }
+        )
+        env.pop("GITHUB_TOKEN", None)
+        env.pop("GH_TOKEN", None)
+
+        def command(*args: str) -> None:
+            result = subprocess.run(
+                [sys.executable, *args],
+                env=env,
+                input="y\ny\n",
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=180,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        command("-m", "hermes_cli.main", "plugins", "install", source.as_uri(), "--no-enable")
+        command("-m", "hermes_cli.main", "plugins", "enable", "scifetch-paper")
+        proof = self.root / "upgrade-proof.json"
+        script = str(Path(__file__).resolve())
+        command(script, "--seed-upgrade", str(profile), str(proof))
+        readme = source / "README.md"
+        readme.write_text(
+            readme.read_text(encoding="utf-8") + "\nOffline update fixture.\n", encoding="utf-8"
+        )
+        git("add", "README.md")
+        git("commit", "-qm", "Second offline plugin snapshot")
+        command("-m", "hermes_cli.main", "plugins", "update", "scifetch-paper")
+        installed = profile / "plugins/scifetch-paper"
+        installed_head = subprocess.check_output(
+            ["git", "-C", str(installed), "rev-parse", "HEAD"], text=True
+        ).strip()
+        self.assertEqual(installed_head, git("rev-parse", "HEAD"))
+        command(script, "--verify-upgrade", str(profile), str(proof))
+
 
 if __name__ == "__main__":
     if sys.argv[1:2] == ["--child"]:
         child(sys.argv[2], Path(sys.argv[3]))
+    elif sys.argv[1:2] in [["--seed-upgrade"], ["--verify-upgrade"]]:
+        upgrade_state(
+            Path(sys.argv[2]), Path(sys.argv[3]), verify=sys.argv[1] == "--verify-upgrade"
+        )
     else:
         unittest.main(verbosity=2)
