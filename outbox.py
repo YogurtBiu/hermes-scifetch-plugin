@@ -7,7 +7,6 @@ An OS sender lock is required for every native transition, not for ingestion.
 
 from __future__ import annotations
 
-import fcntl
 import hashlib
 import json
 import os
@@ -20,6 +19,14 @@ from contextlib import contextmanager, suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, cast
+
+from .platform_io import (
+    canonical_path,
+    lock_sender,
+    open_private_file,
+    process_exited,
+    unlock_sender,
+)
 
 SCHEMA_VERSION = 1
 OUTBOX_FILENAME = "delivery_outbox.sqlite3"
@@ -264,19 +271,20 @@ class SenderLock:
         root = self.store.coordination_dir
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
         lock_path = root / f"{_key(self.store.installation_id)}.lock"
-        fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        fd = open_private_file(lock_path, os.O_RDWR | os.O_CREAT)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            with os.fdopen(os.dup(fd), "r+", encoding="utf-8") as stream:
+            lock_sender(fd)
+            os.lseek(fd, 0, os.SEEK_SET)
+            with os.fdopen(fd, "r+", encoding="utf-8", closefd=False) as stream:
                 bound = stream.read().strip()
-                expected = str(self.store.path.resolve())
-                if bound and bound != expected:
+                expected = canonical_path(self.store.path)
+                if bound and os.path.normcase(bound) != expected:
                     raise SenderBusyError("Installation ledger relocation requires migration")
                 if not bound:
                     stream.seek(0)
                     stream.write(expected)
                     stream.flush()
-                    os.fsync(stream.fileno())
+                    os.fsync(fd)
         except (BlockingIOError, SenderBusyError):
             os.close(fd)
             return False
@@ -288,11 +296,13 @@ class SenderLock:
 
     def release(self) -> None:
         if self._fd is not None:
-            # A forked child must not unlock the parent's inherited descriptor.
-            if self._pid == os.getpid():
-                fcntl.flock(self._fd, fcntl.LOCK_UN)
-            os.close(self._fd)
-            self._fd = None
+            try:
+                # A forked child must not unlock the parent's inherited descriptor.
+                if self._pid == os.getpid():
+                    unlock_sender(self._fd)
+            finally:
+                os.close(self._fd)
+                self._fd = None
 
     def __enter__(self) -> SenderLock:
         if not self.acquire():
@@ -315,7 +325,7 @@ class OutboxStore:
         self._sender_lock = SenderLock(self)
         self._healthy = True
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        fd = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        fd = open_private_file(self.path, os.O_RDWR | os.O_CREAT)
         os.close(fd)
         os.chmod(self.path, 0o600)
         with self._connection() as conn:
@@ -1077,15 +1087,7 @@ class OutboxStore:
 
     @staticmethod
     def _process_exited(process_id: int) -> bool:
-        if process_id <= 0 or process_id == os.getpid():
-            return False
-        try:
-            os.kill(process_id, 0)
-        except ProcessLookupError:
-            return True
-        except PermissionError:
-            pass
-        return False
+        return process_exited(process_id)
 
     def recover(self, owner: str) -> int:
         self._require_sender()
@@ -1582,7 +1584,7 @@ class OutboxStore:
         digest = hashlib.sha256(raw).hexdigest()
         snapshot = self.path.parent / f"legacy-pending-{digest}.json"
         if not snapshot.exists():
-            fd = os.open(snapshot, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            fd = open_private_file(snapshot, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
             with os.fdopen(fd, "wb") as stream:
                 stream.write(raw)
                 stream.flush()

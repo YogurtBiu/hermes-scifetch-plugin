@@ -16,18 +16,30 @@ hermes plugins list
 ```
 
 The plugin connects over HTTP to an existing SciFetch service. Ask the service
-administrator for an address reachable from this computer and a fresh pairing
-code for your SciFetch account. If the service listens only on another
+administrator for an address reachable from this computer. If the service listens only on another
 computer's `127.0.0.1`, arrange a tunnel or an accessible service endpoint first.
 
 For a personal Hermes instance, add the following settings to the intended
-profile's `.env` and keep its existing settings. The default profile uses
-`~/.hermes/.env`. Replace the example URL with the administrator's address.
+profile's `.env` and keep its existing settings. The default macOS/Linux profile
+uses `~/.hermes/.env`. Replace the example URL with the administrator's address.
 
 ```dotenv
 SCIFETCH_SERVER_URL=https://your-scifetch-host
 SCIFETCH_TRUST_MODE=personal_instance
 ```
+
+On Windows, use the target profile's official configuration commands so Hermes
+chooses its own profile directory.
+
+```powershell
+hermes config set SCIFETCH_SERVER_URL https://your-scifetch-host
+hermes config set SCIFETCH_TRUST_MODE personal_instance
+```
+
+The Store/MSIX installation keeps application code under `WindowsApps`, while
+the ordinary default profile is commonly under `%LOCALAPPDATA%\hermes`.
+`HERMES_HOME` and named profiles can select a different location. The plugin
+uses Hermes' public profile APIs to locate its settings and state.
 
 Use `personal_instance` when everyone authorized to use this Hermes profile may
 share one SciFetch account. Each member can instead use their own Hermes
@@ -37,15 +49,18 @@ describes the account boundary and the current multi-user restriction.
 In the same profile, run `hermes tools` and enable the `scifetch` toolset for the
 chat platform you use. Restart that profile's gateway with its service manager
 after publishing the plugin and configuration. Complete Hermes' own chat
-authorization, then send these commands to the bot.
+authorization. In the SciFetch website, sign in with your own account and open
+**个人设置 → 连接 Hermes → 生成配对码**. Enter your current website password in
+the confirmation dialog and copy the one-time code. Then send these commands
+to your own bot.
 
 ```text
 /scifetch login <pairing_code>
 /scifetch status
 ```
 
-Pairing codes are single-use and expire after the administrator's configured
-lifetime, normally ten minutes. Each computer pairs independently and keeps its
+Pairing codes are single-use and normally expire after ten minutes.
+Each computer pairs independently and keeps its
 own installation/device identity. Keep administrator credentials on the server
 administration side.
 
@@ -58,9 +73,12 @@ inspect an existing request.
 
 Runtime compatibility includes the exact audited Hermes
 `0.22.5@bf0203a794a07aac3ff764972ab9087baa4e4f4e` point and the other exact
-points listed under [Stock Compatibility](#stock-compatibility). Use macOS or
-Linux with Hermes' Python environment and `httpx` available. The plugin uses
-POSIX file locking. Native Windows support requires separate verification.
+points listed under [Stock Compatibility](#stock-compatibility). Use Hermes'
+Python environment with `httpx` available. Version `0.2.28` adds a Windows native
+backend targeting x64 Hermes `0.23.0` and Python `3.14.9`. It uses OS file locks
+and read-only process queries while macOS/Linux retain the POSIX backend.
+The [Windows native workflow](https://github.com/YogurtBiu/hermes-scifetch-plugin/actions/workflows/windows.yml)
+records the native installation and runtime contract results for each candidate.
 Installing the plugin and delivering a native file are separate checks. File
 delivery depends on the audited platform route and its accepted file/size limits.
 
@@ -89,6 +107,34 @@ If the plugin fails to load, check the actual gateway interpreter, profile,
 enabled plugin list and `httpx` import. For `trusted_command_context_unavailable`,
 check the selected trust mode and use an ordinary DOI/URL message for a new
 request. The remaining sections describe transport and recovery details.
+
+## Windows Git certificate download error
+
+Git for Windows may report `CRYPT_E_REVOCATION_OFFLINE` while Schannel checks
+certificate revocation. If this read-only OpenSSL probe returns a commit SHA,
+the same repository can be reached with that TLS backend.
+
+```powershell
+git -c http.sslBackend=openssl ls-remote https://github.com/YogurtBiu/hermes-scifetch-plugin.git HEAD
+```
+
+The `-c` value applies to that Git process only. Save a repository-specific
+setting so Git processes started by the Hermes installer use the same backend.
+
+```powershell
+git config --global 'http.https://github.com/YogurtBiu/hermes-scifetch-plugin.git.sslBackend' openssl
+hermes plugins install YogurtBiu/hermes-scifetch-plugin
+```
+
+This setting matches the plugin repository URL and keeps certificate validation
+enabled. To remove it, run the following command.
+
+```powershell
+git config --global --unset 'http.https://github.com/YogurtBiu/hermes-scifetch-plugin.git.sslBackend'
+```
+
+The configuration behavior is described in the official
+[Git config reference](https://git-scm.com/docs/git-config).
 
 ## Trust Modes
 

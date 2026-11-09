@@ -40,7 +40,7 @@ from .trust import (
     trusted_principal_from_context,
 )
 
-PLUGIN_VERSION = "0.2.27"
+PLUGIN_VERSION = "0.2.28"
 logger = logging.getLogger(__name__)
 LOGIN_HINT = "请先创建 SciFetch 配对码，再运行 /scifetch login <pairing_code>。"
 TRUSTED_CONTEXT_UNAVAILABLE = (
