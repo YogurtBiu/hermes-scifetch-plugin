@@ -1,0 +1,14 @@
+name: scifetch-paper
+version: 0.2.27
+description: Route paper requests through an upgrade-safe SciFetch trust mode with exact replies.
+provides_hooks:
+  - pre_gateway_dispatch
+  - pre_llm_call
+  - transform_llm_output
+  - on_session_end
+  - on_session_finalize
+provides_commands:
+  - scifetch
+  - paper
+provides_tools:
+  - scifetch_paper_request

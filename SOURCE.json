@@ -1,0 +1,28 @@
+{
+  "plugin_name": "scifetch-paper",
+  "plugin_version": "0.2.27",
+  "sha256": {
+    "README.md": "a97a905dfcf19b608261a1932cf64c8e1d5f6860ff6446b5d53c2ebc4caa1f4c",
+    "__init__.py": "6e61650f039cdd5d16a80cb41932401e77413600a5c444f4d85ae21292276d1f",
+    "auth.py": "51bdf66ae92569741070cdc2fa1c2f755db839a474fb359806d07aa100f85a84",
+    "client.py": "3e8247918de6a90064afbf674ca1cda32ffe31e15c0e1f15c01c9ac46ddb3306",
+    "commands.py": "5836c18f2d97f0f44b952ad6d7e7dfdcd7f1dc312b93b5fd6c2c98a6a5613ab4",
+    "delivery.py": "c4d567352dd94f7043fc9887fbf9009426f153d2041f261b0a6d352c232e7a58",
+    "detector.py": "e7341bafe7cd795ce8b018a8fc624fed5e5cec21cc562722cc933f8936eea886",
+    "durable_delivery.py": "aec46e3ea89d16765549e01b32620d3be0ab92610d9c079f455f6d63b1326bf2",
+    "environment.py": "ea76833ee97b806360d9f3d2ef9124aa859dad04bb969aa452f63b58b6a893ab",
+    "home_delivery.py": "63bd994ba625350061b4aa5ddf873248cc2cc68f942e0596b7e870fc5f0482f7",
+    "llm_cli.py": "f2390eddaaaf2995d13afa1bb54e9b461d91fef5c7f939d9148767590fb322b9",
+    "outbox.py": "c6989c46d46d6adb7e3194e53de4cc3d69a2e55e00a7a7c0ec2a15b7227e607a",
+    "pending.py": "41cd963f9821be09ca4b8fbde0e6bb5fd4d2eed66cb3b90c150dda53f5613f3b",
+    "plugin.yaml": "ad8fb32756d258b6103c36f94a50fa4fb29928474451c4bfc6a64c01367d368d",
+    "public_errors.py": "3b0ad5ecaf8a5bb78bc8d2ed39311924a60e5de1f04a47a834406e1e6664c546",
+    "response_output.py": "4f9132d33033ece2790f7a83ad6ea7d45e3a0686cff188a5330635013b3c7e05",
+    "state.py": "bda990ca612b5061ee7a5b1a7b1d6d8ce313789fc3bf9491effb2f7e4b94758d",
+    "tool.py": "c78b137294bd1677285a8626aee3cf46b14b05d77aa7608ae5edb0f85b3ae5da",
+    "trust.py": "9d14be8f0892ab79e27bda4014da1cbeb30e151da823e3ebbb8b8c6b9041ba77"
+  },
+  "source_commit": "c10d1c389960265a782b7c561fff95b97958acca",
+  "source_path": "plugins/scifetch-paper",
+  "source_repository": "YogurtBiu/LabVault"
+}
