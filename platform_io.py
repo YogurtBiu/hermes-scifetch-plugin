@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import ntpath
 import os
 import sys
 from pathlib import Path
@@ -109,6 +110,37 @@ def unlock_sender(fd: int) -> None:
 def canonical_path(path: Path) -> str:
     """Use the host's canonical spelling for a persisted ledger binding."""
     return str(path.resolve())
+
+
+def staging_path(path: Path) -> Path:
+    """Represent a Windows staging path without the ordinary MAX_PATH limit."""
+    if sys.platform != "win32":
+        return path
+    value = ntpath.normpath(str(path))
+    if value.startswith("\\\\.\\"):
+        raise ValueError("Staging requires a filesystem path")
+    if value.startswith("\\\\?\\"):
+        remainder = value[4:]
+        if remainder.upper().startswith("UNC\\"):
+            drive, tail = ntpath.splitdrive("\\\\" + remainder[4:])
+            if drive.count("\\") < 3 or (tail and not tail.startswith("\\")):
+                raise ValueError("Staging requires an absolute UNC path")
+        elif not (
+            len(remainder) >= 3
+            and remainder[0].lower() in "abcdefghijklmnopqrstuvwxyz"
+            and remainder[1:3] == ":\\"
+        ):
+            raise ValueError("Staging requires a drive or UNC filesystem path")
+        return Path(value)
+    drive, tail = ntpath.splitdrive(value)
+    if not drive or not tail.startswith("\\"):
+        value = ntpath.normpath(ntpath.abspath(value))
+        drive, tail = ntpath.splitdrive(value)
+    if value.startswith("\\\\") and drive.count("\\") >= 3:
+        return Path("\\\\?\\UNC\\" + value[2:])
+    if len(drive) == 2 and drive[1] == ":" and tail.startswith("\\"):
+        return Path("\\\\?\\" + value)
+    raise ValueError("Staging requires an absolute filesystem path")
 
 
 def process_exited(process_id: int) -> bool:

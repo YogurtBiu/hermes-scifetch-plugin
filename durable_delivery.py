@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -34,6 +35,7 @@ from .outbox import (
     OutboxStore,
     TargetBinding,
 )
+from .platform_io import staging_path
 from .state import PluginState, load_state
 
 logger = logging.getLogger(__name__)
@@ -502,9 +504,28 @@ class DeliverySupervisor:
             raise
         except legacy.WatcherAuthenticationError:
             self.authentication_failed(runtime)
-        except Exception:
+        except Exception as exc:
             self._stage_retry[record.key] = time.time() + 5.0
-            logger.warning("immutable artifact staging deferred")
+            request_id = record.scope.request_id
+            exception_type = type(exc).__name__
+            error_number = getattr(exc, "errno", None)
+            windows_error = getattr(exc, "winerror", None)
+            error_path = getattr(exc, "filename", None)
+            error_path2 = getattr(exc, "filename2", None)
+            logger.warning(
+                "immutable artifact staging deferred request_id=%s role=%s si_index=%s "
+                "exception_type=%s errno=%s winerror=%s error_path_chars=%s error_path2_chars=%s",
+                request_id if re.fullmatch(r"req_[a-f0-9]{32}", request_id) else "<invalid>",
+                record.artifact.role if record.artifact.role in {"MAIN", "SI"} else "<invalid>",
+                record.artifact.ordinal if type(record.artifact.ordinal) is int else None,
+                exception_type
+                if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", exception_type)
+                else "<invalid>",
+                error_number if type(error_number) is int else None,
+                windows_error if type(windows_error) is int else None,
+                len(error_path) if isinstance(error_path, str) else None,
+                len(error_path2) if isinstance(error_path2, str) else None,
+            )
         finally:
             self._staging.discard(record.key)
             self.wake()
@@ -558,7 +579,7 @@ class DeliverySupervisor:
             self.store.block_delivery(record.key, "unsupported_native")
             return
         assert runtime.state_path is not None
-        directory = runtime.state_path.parent / "delivery-staging" / record.key
+        directory = staging_path(runtime.state_path.parent / "delivery-staging" / record.key)
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(directory, 0o700)
         filename = Path(legacy._string_value(data, "filename") or "document").name

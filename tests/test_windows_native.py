@@ -53,6 +53,7 @@ def upgrade_state(profile: Path, proof_path: Path, *, verify: bool) -> None:
     """Seed or inspect an installed plugin using offline credentials and receipts."""
     state_module = load_module("state")
     outbox_module = load_module("outbox")
+    platform_module = load_module("platform_io")
     plugin = profile / "plugins" / "scifetch-paper"
     names = [
         ".env",
@@ -63,7 +64,10 @@ def upgrade_state(profile: Path, proof_path: Path, *, verify: bool) -> None:
     if verify:
         proof = json.loads(proof_path.read_text(encoding="utf-8"))
         for name, digest in proof["sha256"].items():
-            actual = hashlib.sha256((profile / name).read_bytes()).hexdigest()
+            retained = profile / name
+            if name.startswith("plugins/scifetch-paper/delivery-staging/"):
+                retained = platform_module.staging_path(retained)
+            actual = hashlib.sha256(retained.read_bytes()).hexdigest()
             if actual != digest:
                 raise AssertionError(f"Official update changed retained state: {name}")
         store = outbox_module.OutboxStore(plugin / "delivery_outbox.sqlite3", "upgrade-install")
@@ -104,6 +108,9 @@ def upgrade_state(profile: Path, proof_path: Path, *, verify: bool) -> None:
     with store.sender_lock():
         for outcome in ["accepted", "unknown"]:
             body = f"offline-{outcome}".encode()
+            filename = (
+                "Preserved supplementary information " + "Synthetic study " * 5 + "资料😀.pdf"
+            )
             artifact = outbox_module.Artifact(
                 f"file-{outcome}",
                 f"artifact-{outcome}",
@@ -111,6 +118,7 @@ def upgrade_state(profile: Path, proof_path: Path, *, verify: bool) -> None:
                 hashlib.sha256(body).hexdigest(),
                 len(body),
                 "application/pdf",
+                filename=filename if outcome == "accepted" else "unknown.pdf",
             )
             scope = outbox_module.GateScope(
                 "server",
@@ -123,7 +131,17 @@ def upgrade_state(profile: Path, proof_path: Path, *, verify: bool) -> None:
                 target.binding_id,
             )
             record = store.enqueue(scope, target, artifact)
-            staged = profile / f"{outcome}.pdf"
+            if outcome == "accepted":
+                relative = f"plugins/scifetch-paper/delivery-staging/{record.key}/{filename}"
+                staged = platform_module.staging_path(profile / relative)
+                staged.parent.mkdir(parents=True)
+                if len(str(profile / relative).encode("utf-16-le")) // 2 <= 260:
+                    raise AssertionError(
+                        "Cold-update cache fixture must exceed the ordinary path limit"
+                    )
+                names.append(relative)
+            else:
+                staged = profile / f"{outcome}.pdf"
             staged.write_bytes(body)
             store.record_staged(record.key, staged)
             attempt = store.claim_next("before-upgrade")
@@ -141,7 +159,13 @@ def upgrade_state(profile: Path, proof_path: Path, *, verify: bool) -> None:
             {
                 "records": records,
                 "sha256": {
-                    name: hashlib.sha256((profile / name).read_bytes()).hexdigest()
+                    name: hashlib.sha256(
+                        (
+                            platform_module.staging_path(profile / name)
+                            if name.startswith("plugins/scifetch-paper/delivery-staging/")
+                            else profile / name
+                        ).read_bytes()
+                    ).hexdigest()
                     for name in names
                 },
             },
@@ -347,14 +371,13 @@ class NativeContracts(unittest.TestCase):
             self.assertIn("10.9999/offline", message)
             self.assertIn("Synthetic Journal", message)
 
-    def test_download_staging_main_and_three_si_reach_native_once(self) -> None:
-        """Exercise the real filesystem path missing from the original Windows CI."""
+    def _exercise_download_staging(
+        self, filenames: dict[str, str], *, main_first: bool, native_adapter: Any = None
+    ) -> dict[str, Path]:
+        """Use real download/filesystem/ledger workers, faking only remote effects."""
         runtime = self.runtime()
         durable = load_module("durable_delivery")
-        bodies = {
-            "main": b"%PDF-1.4\nfictional main\n",
-            **{f"si-{i}": f"%PDF-1.4\nfictional si {i}\n".encode() for i in range(1, 4)},
-        }
+        bodies = {artifact: f"%PDF-1.4\nfictional {artifact}\n".encode() for artifact in filenames}
         grants: dict[str, dict[str, Any]] = {}
         fetched: list[str] = []
         sent: list[str] = []
@@ -370,7 +393,7 @@ class NativeContracts(unittest.TestCase):
                 "acquisition_id": "offline-acquisition",
                 "generation_id": "offline-generation",
                 "role": "MAIN" if index == 0 else "SI",
-                "filename": "正文 main.pdf" if index == 0 else f"附件 {index}.pdf",
+                "filename": filenames[artifact],
                 "content_type": "application/pdf",
                 "sha256": hashlib.sha256(body).hexdigest(),
                 "size_bytes": len(body),
@@ -408,7 +431,9 @@ class NativeContracts(unittest.TestCase):
         store = durable.open_store(runtime)
         records: dict[str, Any] = {}
 
-        async def native(path: str, before_native: Any) -> dict[str, Any]:
+        staged: dict[str, Path] = {}
+
+        async def native(path: str, before_native: Any) -> object:
             actual = Path(path)
             artifact = next(k for k, v in grants.items() if v["filename"] == actual.name)
             body = await asyncio.to_thread(actual.read_bytes)
@@ -416,10 +441,20 @@ class NativeContracts(unittest.TestCase):
             self.assertEqual(len(body), grants[artifact]["size_bytes"])
             self.assertEqual(hashlib.sha256(body).hexdigest(), grants[artifact]["sha256"])
             self.assertEqual(store.get_delivery(records[artifact].key).staged_path, str(actual))
+            self.assertEqual(
+                store.get_delivery(records[artifact].key).artifact.filename, actual.name
+            )
+            if sys.platform == "win32":
+                self.assertTrue(str(actual).startswith("\\\\?\\"))
+            staged[artifact] = actual
             self.assertTrue(before_native())
             if artifact != "main":
                 self.assertEqual(store.get_delivery(records["main"].key).state, "accepted")
             sent.append(artifact)
+            if native_adapter is not None:
+                result = await native_adapter.send_document("offline-chat", path)
+                self.assertTrue(result.success, result.error)
+                return result
             return {"success": True, "delivery_method": "send_document", "message_id": artifact}
 
         runtime = replace(
@@ -446,22 +481,40 @@ class NativeContracts(unittest.TestCase):
         async def exercise() -> None:
             worker = durable.DeliverySupervisor(store)
             worker.register(runtime)
-            # SI arrives out of order; no staged_path is seeded by the test.
-            for artifact in ["si-3", "si-1", "si-2"]:
-                records[artifact] = durable.ingest_file(store, runtime, grants[artifact])
-                self.assertFalse(records[artifact].staged_path)
+            attachments = list(filenames)[1:]
+            if main_first:
+                records["main"] = durable.ingest_file(store, runtime, grants["main"])
+            else:
+                for artifact in reversed(attachments):
+                    records[artifact] = durable.ingest_file(store, runtime, grants[artifact])
+                    self.assertFalse(records[artifact].staged_path)
             self.assertTrue(await worker.start())
             try:
-                await until(lambda: all(r.staged_path for r in store.list_deliveries()))
-                self.assertEqual(sent, [])
-                records["main"] = durable.ingest_file(store, runtime, grants["main"])
-                self.assertFalse(records["main"].staged_path)
-                worker.wake()
+                if main_first:
+                    await until(lambda: store.get_delivery(records["main"].key).state == "accepted")
+                    self.assertEqual(sent, ["main"])
+                    for artifact in reversed(attachments):
+                        records[artifact] = durable.ingest_file(store, runtime, grants[artifact])
+                        self.assertFalse(records[artifact].staged_path)
+                        worker.wake()
+                        if artifact != attachments[0]:
+                            await until(
+                                lambda current=artifact: bool(
+                                    store.get_delivery(records[current].key).staged_path
+                                )
+                            )
+                            self.assertEqual(sent, ["main"])
+                else:
+                    await until(lambda: all(r.staged_path for r in store.list_deliveries()))
+                    self.assertEqual(sent, [])
+                    records["main"] = durable.ingest_file(store, runtime, grants["main"])
+                    self.assertFalse(records["main"].staged_path)
+                    worker.wake()
                 await until(lambda: all(r.state == "accepted" for r in store.list_deliveries()))
                 await until(lambda: set(audits) == {g["file_id"] for g in grants.values()})
-                self.assertEqual(sent, ["main", "si-1", "si-2", "si-3"])
+                self.assertEqual(sent, list(filenames))
                 self.assertCountEqual(fetched, bodies)
-                self.assertEqual(len(store.pending_audits(now=float("inf"))), 4)
+                self.assertEqual(len(store.pending_audits(now=float("inf"))), len(filenames))
                 for grant in grants.values():
                     durable.ingest_file(store, runtime, grant)
                 self.assertIsNone(store.claim_next(worker.owner))
@@ -472,9 +525,120 @@ class NativeContracts(unittest.TestCase):
         reopened = durable.open_store(runtime)
         with reopened.sender_lock():
             reopened.recover("offline-after-restart")
-            self.assertEqual([r.state for r in reopened.list_deliveries()], ["accepted"] * 4)
+            self.assertEqual(
+                [r.state for r in reopened.list_deliveries()], ["accepted"] * len(filenames)
+            )
             self.assertIsNone(reopened.claim_next("offline-after-restart"))
-        self.assertEqual(sent, ["main", "si-1", "si-2", "si-3"])
+        self.assertEqual(sent, list(filenames))
+        for path in reopened.expire_payloads(now=float("inf")):
+            Path(path).unlink()
+        self.assertTrue(all(not path.exists() for path in staged.values()))
+        self.assertTrue(all(r.state == "accepted" for r in reopened.list_deliveries()))
+        return staged
+
+    def test_download_staging_main_and_three_si_reach_native_once(self) -> None:
+        self._exercise_download_staging(
+            {"main": "正文 main.pdf", **{f"si-{i}": f"附件 {i}.pdf" for i in range(1, 4)}},
+            main_first=False,
+        )
+
+    def long_filenames(self) -> dict[str, str]:
+        self.root = self.root / ("profile-" + "x" * 48) / "deeper-profile"
+        self.root.mkdir(parents=True)
+        return {
+            "main": "正文 main.pdf",
+            "si-1": "SI-01 - Supplementary Information - " + "Synthetic Study " * 5 + "资料😀.pdf",
+            "si-2": "SI-02 - Transparent Peer Review File - "
+            + "Synthetic Study " * 5
+            + "资料😀.pdf",
+        }
+
+    def test_long_staging_main_first_late_si_preserves_names(self) -> None:
+        names = self.long_filenames()
+        # Full paths (including the five-character temporary suffix) exceed the
+        # ordinary Windows boundary, while each filename component is valid.
+        directory = self.root / "delivery-staging" / ("a" * 64)
+        for name in list(names.values())[1:]:
+            self.assertGreater(len(str(directory / name).encode("utf-16-le")) // 2, 260)
+            self.assertLess(len(name.encode("utf-16-le")) // 2, 255)
+        self._exercise_download_staging(names, main_first=True)
+
+    @unittest.skipUnless(sys.platform == "win32", "Controlled Windows legacy path boundary")
+    def test_windows_legacy_path_guard_requires_extended_staging(self) -> None:
+        names = self.long_filenames()
+        original_open = Path.open
+
+        class LegacyPathError(OSError):
+            winerror = 206
+
+        def legacy_open(path: Path, *args: Any, **kwargs: Any) -> Any:
+            # This guard models a legacy process, without changing machine
+            # policy. The separate long-path test uses unpatched real file I/O.
+            value = str(path)
+            if not value.startswith("\\\\?\\") and len(value.encode("utf-16-le")) // 2 >= 260:
+                raise LegacyPathError(36, "offline legacy path refusal", value)
+            return original_open(path, *args, **kwargs)
+
+        with patch.object(Path, "open", legacy_open):
+            unconverted = self.root / "delivery-staging" / ("a" * 64) / names["si-1"]
+            with self.assertRaises(OSError):
+                unconverted.open("wb")
+            self._exercise_download_staging(names, main_first=True)
+
+    @unittest.skipUnless(
+        os.environ.get("SCIFETCH_TEST_HERMES"), "Run inside the official Hermes CI host"
+    )
+    def test_official_weixin_sender_reads_long_staging_and_preserves_file_item_name(self) -> None:
+        names = self.long_filenames()
+        # runtime() isolates HOME/profile before importing the official adapter.
+        self.runtime()
+        sys.path.insert(0, os.environ["SCIFETCH_TEST_HERMES"])
+        weixin = importlib.import_module("plugins.platforms.weixin.adapter")
+        config_class = importlib.import_module("gateway.config").PlatformConfig
+        adapter = weixin.WeixinAdapter(
+            config_class(
+                enabled=True,
+                token="offline-token",
+                extra={
+                    "account_id": "offline-account",
+                    "base_url": "https://offline.example.test",
+                    "cdn_base_url": "https://offline.example.test",
+                    "allow_from": [],
+                    "group_allow_from": [],
+                },
+            )
+        )
+        adapter._send_session = object()  # No connection: all three remote operations are faked.
+        uploaded: list[str] = []
+        sizes: list[int] = []
+        md5s: list[str] = []
+
+        async def upload_url(*args: Any, **kwargs: Any) -> dict[str, str]:
+            sizes.append(kwargs["rawsize"])
+            md5s.append(kwargs["rawfilemd5"])
+            return {"upload_full_url": "https://offline.example.test/upload"}
+
+        async def upload_ciphertext(*args: Any, **kwargs: Any) -> str:
+            self.assertTrue(kwargs["ciphertext"])
+            return "offline-encrypted-query"
+
+        async def send_items(*args: Any, **kwargs: Any) -> dict[str, int]:
+            item = kwargs["item_list"][0]
+            self.assertEqual(item["type"], weixin.ITEM_FILE)
+            uploaded.append(item["file_item"]["file_name"])
+            self.assertEqual(item["file_item"]["len"], str(sizes[-1]))
+            return {"ret": 0}
+
+        with (
+            patch.object(weixin, "_get_upload_url", upload_url),
+            patch.object(weixin, "_upload_ciphertext", upload_ciphertext),
+            patch.object(weixin, "_send_items", send_items),
+        ):
+            self._exercise_download_staging(names, main_first=True, native_adapter=adapter)
+        self.assertEqual(uploaded, list(names.values()))
+        expected = [f"%PDF-1.4\nfictional {artifact}\n".encode() for artifact in names]
+        self.assertEqual(sizes, [len(body) for body in expected])
+        self.assertEqual(md5s, [hashlib.md5(body).hexdigest() for body in expected])
 
     def start_child(self, mode: str) -> subprocess.Popen[str]:
         process = subprocess.Popen(
@@ -691,7 +855,7 @@ class NativeContracts(unittest.TestCase):
         self.assertEqual(installed_commit, os.environ["SCIFETCH_TEST_EXPECTED_COMMIT"])
         print(f"Official installed plugin commit matches event: {installed_commit}")
         source = json.loads((PLUGIN / "SOURCE.json").read_text(encoding="utf-8"))
-        self.assertEqual(source["plugin_version"], "0.2.30")
+        self.assertEqual(source["plugin_version"], "0.2.31")
         for name, digest in source["sha256"].items():
             self.assertEqual(hashlib.sha256((PLUGIN / name).read_bytes()).hexdigest(), digest)
 

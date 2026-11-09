@@ -74,7 +74,7 @@ inspect an existing request.
 Runtime compatibility includes the exact audited Hermes
 `0.22.5@bf0203a794a07aac3ff764972ab9087baa4e4f4e` point and the other exact
 points listed under [Stock Compatibility](#stock-compatibility). Use Hermes'
-Python environment with `httpx` available. Plugin `0.2.30` includes a Windows native
+Python environment with `httpx` available. Plugin `0.2.31` includes a Windows native
 backend targeting x64 Hermes `0.23.0` and Python `3.14.9`. It uses OS file locks
 and read-only process queries while macOS/Linux retain the POSIX backend.
 The [Windows native workflow](https://github.com/YogurtBiu/hermes-scifetch-plugin/actions/workflows/windows.yml)
@@ -82,10 +82,18 @@ records the native installation and runtime contract results for each candidate.
 Installing the plugin and delivering a native file are separate checks. File
 delivery depends on the audited platform route and its accepted file/size limits.
 
-Plugin `0.2.30` fixes Windows file staging after download: it preserves file
+Plugin `0.2.30` fixed Windows file staging after download: it preserves file
 flush/fsync, size and SHA256 verification and atomic replacement, while skipping
 the POSIX-only parent-directory fd sync on Windows. The staging cache can be
 rebuilt; this does not promise POSIX directory durability on Windows.
+
+Plugin `0.2.31` uses extended absolute paths for Windows artifact staging,
+including temporary writes and native reads. It preserves the original filename,
+file verification and delivery ledger without changing Windows registry policy.
+This addresses ordinary-path length exposure; it does not establish the cause
+of an earlier failure whose exception was not recorded. Deferred staging logs now
+include the request, role/index, exception class, integer OS codes and error-path
+lengths, without exception messages, path text, signed URLs or credentials.
 
 The release's `SOURCE.json` records the source commit, plugin version and SHA256
 of each published plugin file. See the official
