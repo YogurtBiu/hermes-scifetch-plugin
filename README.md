@@ -121,8 +121,25 @@ hermes plugins auto-update off
    desktop app sessions and CLI sessions. Disable their automatic restart with
    the relevant service manager and confirm they have exited. A stopped gateway
    alone does not exclude another writer.
-3. Back up the stopped profile's current state and ledger together, then run the
-   target profile's official update command while those processes remain stopped.
+3. Back up the stopped profile's current state and ledger together. Before each
+   **Windows** cold update, enable long paths for Git in the installed plugin
+   repository and check the local value. Replace the example directory below
+   with the installed `Location` shown by `hermes plugins install`, in the same
+   target profile:
+
+```powershell
+git -C "C:\path\to\hermes\plugins\scifetch-paper" config --local core.longpaths true
+git -C "C:\path\to\hermes\plugins\scifetch-paper" config --local --get core.longpaths
+```
+
+   The check must print `true`. Git for Windows needs this repository-local
+   setting to preserve long staging-cache paths when the official updater
+   stashes local files. It changes only that installed repository; the plugin
+   does not write Git configuration automatically. This setting addresses Git's
+   path handling, not the host Python process's own long-path support.
+
+   Then run the target profile's official update command while all its Hermes
+   processes remain stopped.
 
 ```bash
 hermes plugins update scifetch-paper

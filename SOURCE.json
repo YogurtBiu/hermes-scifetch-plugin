@@ -4,7 +4,7 @@
   "sha256": {
     ".gitattributes": "c6fa659d8abb7724c8160fa2a3bf36d0459aae228fd4f7d2ba48b8ec440204c1",
     ".github/workflows/windows.yml": "352054cfe5f8bc1669c41c653abbecbabf3d5e70cc2d5cf2d52abf32c01fb6b2",
-    "README.md": "42c3eac78218632012f43ce56fd29bd02633e513c04cd5254791afe7e1e182fe",
+    "README.md": "23eba2757d78b7cee53dff02816b9a9932503c652b135f994010e08816400064",
     "__init__.py": "6e61650f039cdd5d16a80cb41932401e77413600a5c444f4d85ae21292276d1f",
     "auth.py": "51bdf66ae92569741070cdc2fa1c2f755db839a474fb359806d07aa100f85a84",
     "client.py": "3e8247918de6a90064afbf674ca1cda32ffe31e15c0e1f15c01c9ac46ddb3306",
@@ -22,11 +22,11 @@
     "public_errors.py": "3b0ad5ecaf8a5bb78bc8d2ed39311924a60e5de1f04a47a834406e1e6664c546",
     "response_output.py": "4f9132d33033ece2790f7a83ad6ea7d45e3a0686cff188a5330635013b3c7e05",
     "state.py": "bda990ca612b5061ee7a5b1a7b1d6d8ce313789fc3bf9491effb2f7e4b94758d",
-    "tests/test_windows_native.py": "e5dc2a34969137eb5a618913dca2650dd21a32a40bbbcb5815255ea3cc046c68",
+    "tests/test_windows_native.py": "64f32c4d2a990b700c852d2eee8c56441984a61d9474b716527b4bdbe2e58401",
     "tool.py": "c78b137294bd1677285a8626aee3cf46b14b05d77aa7608ae5edb0f85b3ae5da",
     "trust.py": "9d14be8f0892ab79e27bda4014da1cbeb30e151da823e3ebbb8b8c6b9041ba77"
   },
-  "source_commit": "369fa4df731e5fc777a1736d7dcffc0a3914ac6a",
+  "source_commit": "bda60475f8d73e4d2d375f276e4d584a15b03de0",
   "source_path": "plugins/scifetch-paper",
   "source_repository": "YogurtBiu/LabVault"
 }

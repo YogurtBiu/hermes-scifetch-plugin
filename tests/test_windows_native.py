@@ -912,6 +912,21 @@ class NativeContracts(unittest.TestCase):
 
         command("-m", "hermes_cli.main", "plugins", "install", source.as_uri(), "--no-enable")
         command("-m", "hermes_cli.main", "plugins", "enable", "scifetch-paper")
+        installed = profile / "plugins/scifetch-paper"
+
+        def installed_git(*args: str) -> str:
+            return subprocess.check_output(
+                ["git", "-C", str(installed), *args],
+                env=env,
+                text=True,
+                encoding="utf-8",
+            ).strip()
+
+        if sys.platform == "win32":
+            # The documented operator step applies only to this installed repo.
+            # Hermes copies .git/config before stashing untracked long cache paths.
+            installed_git("config", "--local", "core.longpaths", "true")
+            self.assertEqual(installed_git("config", "--local", "--get", "core.longpaths"), "true")
         proof = self.root / "upgrade-proof.json"
         script = str(Path(__file__).resolve())
         command(script, "--seed-upgrade", str(profile), str(proof))
@@ -922,11 +937,10 @@ class NativeContracts(unittest.TestCase):
         git("add", "README.md")
         git("commit", "-qm", "Second offline plugin snapshot")
         command("-m", "hermes_cli.main", "plugins", "update", "scifetch-paper")
-        installed = profile / "plugins/scifetch-paper"
-        installed_head = subprocess.check_output(
-            ["git", "-C", str(installed), "rev-parse", "HEAD"], text=True
-        ).strip()
+        installed_head = installed_git("rev-parse", "HEAD")
         self.assertEqual(installed_head, git("rev-parse", "HEAD"))
+        if sys.platform == "win32":
+            self.assertEqual(installed_git("config", "--local", "--get", "core.longpaths"), "true")
         command(script, "--verify-upgrade", str(profile), str(proof))
 
 
