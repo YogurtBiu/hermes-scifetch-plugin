@@ -74,7 +74,7 @@ inspect an existing request.
 Runtime compatibility includes the exact audited Hermes
 `0.22.5@bf0203a794a07aac3ff764972ab9087baa4e4f4e` point and the other exact
 points listed under [Stock Compatibility](#stock-compatibility). Use Hermes'
-Python environment with `httpx` available. Plugin `0.2.28` adds a Windows native
+Python environment with `httpx` available. Plugin `0.2.29` includes a Windows native
 backend targeting x64 Hermes `0.23.0` and Python `3.14.9`. It uses OS file locks
 and read-only process queries while macOS/Linux retain the POSIX backend.
 The [Windows native workflow](https://github.com/YogurtBiu/hermes-scifetch-plugin/actions/workflows/windows.yml)
@@ -89,16 +89,38 @@ for the host's installation and enable controls.
 
 ## Updating a Git installation
 
-For an installation already managed from this repository, update its code with
-the target profile's official command and restart the gateway.
+For an installation already managed from this repository, use a cold update in
+the same target profile. The saved device state and delivery ledger currently
+live inside the installed plugin tree. Updating while a process writes there
+can lose a new receipt during the official directory replacement.
+
+On Hermes `0.23.0`, turn off automatic plugin application before arranging the
+quiet window. This control applies to the profile's plugins. Older audited
+`0.22.5` does not provide this command.
+
+```bash
+hermes plugins auto-update off
+```
+
+1. Stop new paper submissions and let active file sends and pending audits
+   finish. Preserve any unknown native outcome; do not retry it to drain the queue.
+2. Stop **all** Hermes processes using the target profile, including gateways,
+   desktop app sessions and CLI sessions. Disable their automatic restart with
+   the relevant service manager and confirm they have exited. A stopped gateway
+   alone does not exclude another writer.
+3. Back up the stopped profile's current state and ledger together, then run the
+   target profile's official update command while those processes remain stopped.
 
 ```bash
 hermes plugins update scifetch-paper
 ```
 
-Keep the same profile, saved installation identity and local delivery ledger.
-Back up state only after stopping new submissions and draining active file
-sends. Preserve receipts written after any older backup. A copied plugin
+4. Restart the target profile and check `hermes plugins list` and `/scifetch status`.
+   Keep automatic plugin application off for this release; an unattended update
+   cannot establish that all profile writers have stopped.
+
+Keep the same profile, saved installation identity and local delivery ledger;
+preserve receipts written after any older backup. A copied plugin
 directory with the same name needs a reviewed migration before a Git install
 can replace it. When moving to another computer, install into a fresh profile
 and obtain a new pairing code.

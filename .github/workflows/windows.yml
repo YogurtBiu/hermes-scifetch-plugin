@@ -77,6 +77,8 @@ jobs:
           python -m hermes_cli.main plugins list --plain --no-bundled
           if ($LASTEXITCODE -ne 0) { throw 'Official plugin listing failed' }
       - name: Run native process and installed-plugin contracts
+        env:
+          SCIFETCH_TEST_EXPECTED_COMMIT: ${{ github.sha }}
         shell: pwsh
         run: |
           $env:SCIFETCH_TEST_PLUGIN = Join-Path $env:HERMES_HOME 'plugins\scifetch-paper'

@@ -15,6 +15,8 @@ import threading
 import time
 import uuid
 from collections.abc import Mapping
+from concurrent.futures import Future, InvalidStateError
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -40,6 +42,7 @@ _WORKER_POLL = 0.25
 _STAGE_TIMEOUT = 120.0
 _AUDIT_TIMEOUT = 20.0
 _MAX_NATIVE_CALLS = 4
+_STARTUP_TIMEOUT = 5.0
 _REGISTRY_LOCK = threading.Lock()
 _SUPERVISORS: dict[str, DeliverySupervisor] = {}
 
@@ -422,16 +425,20 @@ class DeliverySupervisor:
     async def start(self) -> bool:
         if not self._lock.acquire():
             return False
-        self.store.recover(self.owner)
-        self._loop = asyncio.get_running_loop()
-        self._wake = asyncio.Event()
-        self._tasks = [
-            asyncio.create_task(self._stage_loop()),
-            asyncio.create_task(self._send_loop()),
-            asyncio.create_task(self._audit_loop()),
-            asyncio.create_task(self._retention_loop()),
-            asyncio.create_task(self._reconcile_loop()),
-        ]
+        try:
+            self.store.recover(self.owner)
+            self._loop = asyncio.get_running_loop()
+            self._wake = asyncio.Event()
+            self._tasks = [
+                asyncio.create_task(self._stage_loop()),
+                asyncio.create_task(self._send_loop()),
+                asyncio.create_task(self._audit_loop()),
+                asyncio.create_task(self._retention_loop()),
+                asyncio.create_task(self._reconcile_loop()),
+            ]
+        except BaseException:
+            await self.close()
+            raise
         return True
 
     async def close(self) -> None:
@@ -976,21 +983,40 @@ def supervisor_for(runtime: legacy.DeliveryRuntime) -> DeliverySupervisor:
         supervisor = _SUPERVISORS.get(identity)
         if supervisor is None:
             supervisor = DeliverySupervisor(open_store(runtime))
-            _SUPERVISORS[identity] = supervisor
-            ready = threading.Event()
+            ready: Future[None] = Future()
 
             def run() -> None:
                 async def own() -> None:
                     assert supervisor is not None
-                    await supervisor.start()
-                    ready.set()
-                    await asyncio.Event().wait()
+                    error: Exception | None = None
+                    try:
+                        if not await supervisor.start():
+                            raise RuntimeError("Durable sender is owned by another process")
+                        try:
+                            ready.set_result(None)
+                        except InvalidStateError:
+                            # The caller timed out. Never leave a late owner running.
+                            return
+                        await asyncio.gather(*supervisor._tasks, return_exceptions=True)
+                    except Exception as exc:
+                        error = exc
+                    finally:
+                        await supervisor.close()
+                    if error is not None:
+                        with contextlib.suppress(InvalidStateError):
+                            ready.set_exception(error)
 
                 asyncio.run(own())
 
             threading.Thread(target=run, daemon=True, name="scifetch-native-outbox").start()
-            if not ready.wait(timeout=5):
-                raise RuntimeError("Durable sender initialization did not finish")
+            try:
+                ready.result(timeout=_STARTUP_TIMEOUT)
+            except FutureTimeoutError as exc:
+                if ready.cancel():
+                    raise RuntimeError("Durable sender initialization did not finish") from exc
+                # Completion won the deadline race; consume that exact outcome.
+                ready.result()
+            _SUPERVISORS[identity] = supervisor
         if (
             runtime.state_path is None
             or supervisor.store.path.resolve()

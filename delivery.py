@@ -3664,7 +3664,12 @@ def _scrub_public_text(value: str, *, max_length: int = 240) -> str:
         (r"Bearer\s+[^\s]+", "Bearer <redacted>"),
         (r"token=[^&\s]+", "token=<redacted>"),
         (r"(?:(?:/Users|/private|/tmp|/var|/Volumes)/[^\s]+)", "<server-path>"),
-        (r"[A-Za-z]:\\\\[^\s]+", "<server-path>"),
+        # Quoted paths have an explicit end; bare paths may contain spaces.
+        # Redact a bare path through the next field delimiter to hide its tail.
+        (
+            r"""(?:"[A-Za-z]:\\[^"\r\n]*"|'[A-Za-z]:\\[^\r\n"<>|]*'|[A-Za-z]:\\[^\r\n"<>|]*)""",
+            "<server-path>",
+        ),
     )
     for pattern, replacement in replacements:
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)

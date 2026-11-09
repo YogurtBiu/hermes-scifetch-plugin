@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import importlib
 import importlib.util
@@ -11,7 +12,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -158,6 +161,188 @@ class NativeContracts(unittest.TestCase):
         return self.outbox.OutboxStore(
             path or self.root / "ledger.sqlite3", "native-install", self.root / "locks"
         )
+
+    def runtime(self) -> Any:
+        environment = patch.dict(
+            os.environ,
+            {
+                "HOME": str(self.root),
+                "USERPROFILE": str(self.root),
+                "HERMES_HOME": str(self.root / "profile"),
+            },
+        )
+        environment.start()
+        self.addCleanup(environment.stop)
+        durable = load_module("durable_delivery")
+        state_module = load_module("state")
+        state = state_module.PluginState(
+            server_url="https://offline.example.test",
+            device_id="offline-device",
+            access_token="offline-access",
+            refresh_token="offline-refresh",
+            access_expires_at="2099-01-01T00:00:00+00:00",
+            refresh_expires_at="2099-02-01T00:00:00+00:00",
+            trust_mode="personal_instance",
+            installation_id="native-install",
+        )
+        path = self.root / "state.json"
+        state_module.save_state(path, state)
+        return durable.legacy.DeliveryRuntime(
+            state=state,
+            state_path=path,
+            request_id="request",
+            target=durable.legacy.DeliveryTarget(
+                platform="weixin",
+                chat_id="chat",
+                user_id="user",
+                chat_type="private",
+                hermes_version="0.23.0",
+            ),
+            send_document=lambda path: self.fail("No native sends in a startup/text test"),
+        )
+
+    @staticmethod
+    def close_daemon(durable: Any, worker: Any) -> None:
+        asyncio.run_coroutine_threadsafe(worker.close(), worker._loop).result(timeout=5)
+        durable._SUPERVISORS.pop(worker.store.installation_id, None)
+
+    def test_supervisor_busy_start_retries_without_reviving_unknown_or_fatal(self) -> None:
+        runtime = self.runtime()
+        durable = load_module("durable_delivery")
+        incumbent = durable.open_store(runtime)
+        record = self.add_main(incumbent)
+        with incumbent.sender_lock():
+            attempt = incumbent.claim_next("old-owner")
+            self.assertTrue(incumbent.begin_native(attempt.attempt_id, attempt.start_token))
+            incumbent.mark_unknown(attempt.attempt_id, "offline-unconfirmed", stopped=True)
+            with self.assertRaisesRegex(RuntimeError, "owned by another process"):
+                durable.supervisor_for(runtime)
+            self.assertNotIn(runtime.state.installation_id, durable._SUPERVISORS)
+        worker = durable.supervisor_for(runtime)
+        try:
+            self.assertTrue(worker._loop.is_running() and worker._lock.held)
+            self.assertEqual(len(worker._tasks), 5)
+            self.assertEqual(worker.store.get_delivery(record.key).state, "unknown")
+            self.assertIsNone(worker.store.claim_next(worker.owner))
+            worker._fatal = True
+            self.assertIs(durable.supervisor_for(runtime), worker)
+            self.assertTrue(worker._fatal)
+        finally:
+            self.close_daemon(durable, worker)
+
+    def test_supervisor_start_exception_releases_real_lock(self) -> None:
+        runtime = self.runtime()
+        durable = load_module("durable_delivery")
+        with (
+            patch.object(
+                durable.OutboxStore, "recover", side_effect=RuntimeError("offline failure")
+            ),
+            self.assertRaisesRegex(RuntimeError, "offline failure"),
+        ):
+            durable.supervisor_for(runtime)
+        self.assertNotIn(runtime.state.installation_id, durable._SUPERVISORS)
+        worker = durable.supervisor_for(runtime)
+        try:
+            self.assertTrue(worker._lock.held and worker._loop.is_running())
+        finally:
+            self.close_daemon(durable, worker)
+
+    def test_supervisor_start_timeout_releases_late_owner(self) -> None:
+        runtime = self.runtime()
+        durable = load_module("durable_delivery")
+        release, entered, closed = threading.Event(), threading.Event(), threading.Event()
+        recover = durable.OutboxStore.recover
+        close = durable.DeliverySupervisor.close
+
+        def delayed_recover(store: Any, owner: str) -> None:
+            recover(store, owner)
+            entered.set()
+            if not release.wait(timeout=5):
+                raise AssertionError("Test did not release startup")
+
+        async def observed_close(worker: Any) -> None:
+            await close(worker)
+            closed.set()
+
+        with (
+            patch.object(durable.OutboxStore, "recover", delayed_recover),
+            patch.object(durable.DeliverySupervisor, "close", observed_close),
+            patch.object(durable, "_STARTUP_TIMEOUT", 0.5),
+        ):
+            try:
+                with self.assertRaisesRegex(RuntimeError, "initialization did not finish"):
+                    durable.supervisor_for(runtime)
+                self.assertTrue(entered.is_set())
+                self.assertNotIn(runtime.state.installation_id, durable._SUPERVISORS)
+            finally:
+                release.set()
+            self.assertTrue(closed.wait(timeout=5))
+        worker = durable.supervisor_for(runtime)
+        try:
+            self.assertTrue(worker._lock.held and worker._loop.is_running())
+        finally:
+            self.close_daemon(durable, worker)
+
+    def test_windows_paths_redacted_in_real_summary_storage_and_callback(self) -> None:
+        runtime = self.runtime()
+        durable = load_module("durable_delivery")
+        sent: list[str] = []
+        store = durable.open_store(runtime)
+
+        async def text(message: str) -> dict[str, bool]:
+            rows = store.list_terminal_segments(
+                runtime.request_id, runtime.state.server_url, runtime.state.device_id
+            )
+            self.assertEqual(rows[-1]["text"], message)
+            sent.append(message)
+            return {"success": True}
+
+        runtime = replace(runtime, send_text=text)
+
+        async def exercise() -> None:
+            worker = durable.DeliverySupervisor(store)
+            worker.register(runtime)
+            self.assertTrue(await worker.start())
+            try:
+                with patch.object(durable, "supervisor_for", return_value=worker):
+                    for path in [
+                        r"C:\Users\Fictional\private.pdf",
+                        r"C:\\Users\\Fictional\\private.pdf",
+                        r'"C:\Users\Fictional User\private file.pdf"',
+                        r"'D:\Fictional Files\private file.pdf'",
+                        r"C:\Users\Fictional User\private file.pdf",
+                        r"'D:\Fictional O'Connor\private file.pdf'",
+                    ]:
+                        self.assertTrue(
+                            await durable.legacy._send_delivery_summary(
+                                runtime,
+                                [
+                                    {
+                                        "role": "main",
+                                        "filename": "main.pdf",
+                                        "title": "Synthetic study " + path,
+                                        "doi": "10.9999/offline",
+                                        "journal": "Synthetic Journal",
+                                    }
+                                ],
+                            )
+                        )
+            finally:
+                await worker.close()
+
+        asyncio.run(exercise())
+        self.assertEqual(len(sent), 6)
+        rows = store.list_terminal_segments(
+            runtime.request_id, runtime.state.server_url, runtime.state.device_id
+        )
+        self.assertEqual([row["text"] for row in rows], sent)
+        for message in sent:
+            self.assertIn("<server-path>", message)
+            self.assertNotIn("Fictional", message)
+            self.assertNotIn("private", message)
+            self.assertIn("Synthetic study", message)
+            self.assertIn("10.9999/offline", message)
+            self.assertIn("Synthetic Journal", message)
 
     def start_child(self, mode: str) -> subprocess.Popen[str]:
         process = subprocess.Popen(
@@ -368,8 +553,13 @@ class NativeContracts(unittest.TestCase):
         self.assertEqual(loaded.tools_registered, ["scifetch_paper_request"])
         self.assertEqual(len(loaded.hooks_registered), 5)
         self.assertEqual(get_version_info().derived_version, "0.23.0")
+        installed_commit = subprocess.check_output(
+            ["git", "-C", str(PLUGIN), "rev-parse", "HEAD"], text=True, encoding="utf-8"
+        ).strip()
+        self.assertEqual(installed_commit, os.environ["SCIFETCH_TEST_EXPECTED_COMMIT"])
+        print(f"Official installed plugin commit matches event: {installed_commit}")
         source = json.loads((PLUGIN / "SOURCE.json").read_text(encoding="utf-8"))
-        self.assertEqual(source["plugin_version"], "0.2.28")
+        self.assertEqual(source["plugin_version"], "0.2.29")
         for name, digest in source["sha256"].items():
             self.assertEqual(hashlib.sha256((PLUGIN / name).read_bytes()).hexdigest(), digest)
 
