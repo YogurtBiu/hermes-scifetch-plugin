@@ -52,8 +52,13 @@ jobs:
           ) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           python -m pip install --disable-pip-version-check uv
           if ($LASTEXITCODE -ne 0) { throw 'Could not install uv' }
-          uv pip install --system -e ./hermes-host
-          if ($LASTEXITCODE -ne 0) { throw 'Could not prepare official Hermes dependencies' }
+          Push-Location hermes-host
+          try {
+            uv pip install --system -e .
+            if ($LASTEXITCODE -ne 0) { throw 'Could not prepare official Hermes dependencies' }
+          } finally {
+            Pop-Location
+          }
       - name: Install public plugin with official CLI
         shell: pwsh
         run: |

@@ -278,7 +278,7 @@ class SenderLock:
             with os.fdopen(fd, "r+", encoding="utf-8", closefd=False) as stream:
                 bound = stream.read().strip()
                 expected = canonical_path(self.store.path)
-                if bound and os.path.normcase(bound) != expected:
+                if bound and bound != expected:
                     raise SenderBusyError("Installation ledger relocation requires migration")
                 if not bound:
                     stream.seek(0)

@@ -2,7 +2,7 @@
   "plugin_name": "scifetch-paper",
   "plugin_version": "0.2.28",
   "sha256": {
-    ".github/workflows/windows.yml": "0c302d75e7586c1c9bd44a967758648edf647223fec0f2653dc77af2517baeca",
+    ".github/workflows/windows.yml": "080742243747a53089a7067dd4a4ef016603c9027cadbb447f945a796c10b33d",
     "README.md": "0120054e65bc6559d43a54bd7f81447fe77ce5b45981a6ec72098626b353c29d",
     "__init__.py": "6e61650f039cdd5d16a80cb41932401e77413600a5c444f4d85ae21292276d1f",
     "auth.py": "51bdf66ae92569741070cdc2fa1c2f755db839a474fb359806d07aa100f85a84",
@@ -14,9 +14,9 @@
     "environment.py": "ea76833ee97b806360d9f3d2ef9124aa859dad04bb969aa452f63b58b6a893ab",
     "home_delivery.py": "63bd994ba625350061b4aa5ddf873248cc2cc68f942e0596b7e870fc5f0482f7",
     "llm_cli.py": "f2390eddaaaf2995d13afa1bb54e9b461d91fef5c7f939d9148767590fb322b9",
-    "outbox.py": "9a88ce3950e7b6985fb906c8076552467d3d916e312e91a522db771f403573c7",
+    "outbox.py": "f514d982008da5c92abbb8acc83c3b243b3de578f870ef263c332ed3bd47a570",
     "pending.py": "41cd963f9821be09ca4b8fbde0e6bb5fd4d2eed66cb3b90c150dda53f5613f3b",
-    "platform_io.py": "5c97806f41c94d4d0eb4b263d0948664b96abb6c5ec9b4639fba64fa71b48d8a",
+    "platform_io.py": "390ae006cd59594dc9b0cf271b524c925a3685b7d52d2515d55e230dc4df0d1d",
     "plugin.yaml": "fbbb42189d7ef3cc1d8b5f1313d10efff493b153adcba936f208233c4cebbfac",
     "public_errors.py": "3b0ad5ecaf8a5bb78bc8d2ed39311924a60e5de1f04a47a834406e1e6664c546",
     "response_output.py": "4f9132d33033ece2790f7a83ad6ea7d45e3a0686cff188a5330635013b3c7e05",
@@ -25,7 +25,7 @@
     "tool.py": "c78b137294bd1677285a8626aee3cf46b14b05d77aa7608ae5edb0f85b3ae5da",
     "trust.py": "9d14be8f0892ab79e27bda4014da1cbeb30e151da823e3ebbb8b8c6b9041ba77"
   },
-  "source_commit": "c06651a5da0a10eb78a9a15f45d4e2c9a27dc07a",
+  "source_commit": "2b5ffff91775e8c62305f7fb61e0d5ae7d4c2e18",
   "source_path": "plugins/scifetch-paper",
   "source_repository": "YogurtBiu/LabVault"
 }

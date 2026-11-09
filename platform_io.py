@@ -108,7 +108,7 @@ def unlock_sender(fd: int) -> None:
 
 def canonical_path(path: Path) -> str:
     """Use the host's canonical spelling for a persisted ledger binding."""
-    return os.path.normcase(str(path.resolve()))
+    return str(path.resolve())
 
 
 def process_exited(process_id: int) -> bool:
