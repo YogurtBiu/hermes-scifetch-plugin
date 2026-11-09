@@ -74,13 +74,18 @@ inspect an existing request.
 Runtime compatibility includes the exact audited Hermes
 `0.22.5@bf0203a794a07aac3ff764972ab9087baa4e4f4e` point and the other exact
 points listed under [Stock Compatibility](#stock-compatibility). Use Hermes'
-Python environment with `httpx` available. Plugin `0.2.29` includes a Windows native
+Python environment with `httpx` available. Plugin `0.2.30` includes a Windows native
 backend targeting x64 Hermes `0.23.0` and Python `3.14.9`. It uses OS file locks
 and read-only process queries while macOS/Linux retain the POSIX backend.
 The [Windows native workflow](https://github.com/YogurtBiu/hermes-scifetch-plugin/actions/workflows/windows.yml)
 records the native installation and runtime contract results for each candidate.
 Installing the plugin and delivering a native file are separate checks. File
 delivery depends on the audited platform route and its accepted file/size limits.
+
+Plugin `0.2.30` fixes Windows file staging after download: it preserves file
+flush/fsync, size and SHA256 verification and atomic replacement, while skipping
+the POSIX-only parent-directory fd sync on Windows. The staging cache can be
+rebuilt; this does not promise POSIX directory durability on Windows.
 
 The release's `SOURCE.json` records the source commit, plugin version and SHA256
 of each published plugin file. See the official
@@ -124,6 +129,15 @@ preserve receipts written after any older backup. A copied plugin
 directory with the same name needs a reviewed migration before a Git install
 can replace it. When moving to another computer, install into a fresh profile
 and obtain a new pairing code.
+
+Updating or restarting does not itself resume an old pending request.
+`/paper status`, `/paper summary` and `/paper replay` only inspect its records;
+`/paper retry` records consent for an unknown native outcome and does not start
+a pending download or send. Existing pending recovery requires a fresh authorized
+route for the exact target, matching server/device/installation and an unexpired
+artifact. There is currently no public command to resume only an old pending
+request. Keep its ledger; do not blindly resubmit the original URL, delete state
+or fill native receipts to force recovery.
 
 If the plugin fails to load, check the actual gateway interpreter, profile,
 enabled plugin list and `httpx` import. For `trusted_command_context_unavailable`,

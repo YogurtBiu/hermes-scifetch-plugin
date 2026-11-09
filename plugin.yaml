@@ -1,5 +1,5 @@
 name: scifetch-paper
-version: 0.2.29
+version: 0.2.30
 description: Route paper requests through an upgrade-safe SciFetch trust mode with exact replies.
 provides_hooks:
   - pre_gateway_dispatch

@@ -1652,6 +1652,10 @@ async def _download_file(
 
 
 def _fsync_directory(path: Path) -> None:
+    # Windows CRT cannot open a directory fd. The file itself was flushed and
+    # synced before replace; this reconstructible staging cache is not a receipt.
+    if os.name == "nt":
+        return
     descriptor = os.open(path, os.O_RDONLY)
     try:
         os.fsync(descriptor)

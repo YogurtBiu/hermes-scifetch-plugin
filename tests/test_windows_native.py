@@ -15,10 +15,13 @@ import tempfile
 import threading
 import unittest
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 from unittest.mock import patch
+
+import httpx
 
 PLUGIN = Path(os.environ.get("SCIFETCH_TEST_PLUGIN", Path(__file__).resolve().parents[1]))
 
@@ -344,6 +347,135 @@ class NativeContracts(unittest.TestCase):
             self.assertIn("10.9999/offline", message)
             self.assertIn("Synthetic Journal", message)
 
+    def test_download_staging_main_and_three_si_reach_native_once(self) -> None:
+        """Exercise the real filesystem path missing from the original Windows CI."""
+        runtime = self.runtime()
+        durable = load_module("durable_delivery")
+        bodies = {
+            "main": b"%PDF-1.4\nfictional main\n",
+            **{f"si-{i}": f"%PDF-1.4\nfictional si {i}\n".encode() for i in range(1, 4)},
+        }
+        grants: dict[str, dict[str, Any]] = {}
+        fetched: list[str] = []
+        sent: list[str] = []
+        audits: list[str] = []
+        expiry = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        hard_expiry = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+        for index, (artifact, body) in enumerate(bodies.items()):
+            grants[artifact] = {
+                "request_id": runtime.request_id,
+                "item_id": "offline-item",
+                "file_id": f"file-{artifact}",
+                "artifact_id": artifact,
+                "acquisition_id": "offline-acquisition",
+                "generation_id": "offline-generation",
+                "role": "MAIN" if index == 0 else "SI",
+                "filename": "正文 main.pdf" if index == 0 else f"附件 {index}.pdf",
+                "content_type": "application/pdf",
+                "sha256": hashlib.sha256(body).hexdigest(),
+                "size_bytes": len(body),
+                "si_index": index,
+                "integrity_status": "validated",
+                "readiness_revision": index + 1,
+                "retention_expires_at": expiry,
+                "download_url": f"/files/{artifact}",
+            }
+
+        def http(request: httpx.Request) -> httpx.Response:
+            path = request.url.path
+            if path.endswith("/pin"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "owner_token": "offline-pin",
+                        "owner_version": 1,
+                        "expires_at": expiry,
+                        "hard_expires_at": hard_expiry,
+                    },
+                )
+            if path.endswith("/download-url"):
+                return httpx.Response(200, json=grants[path.split("/")[-2]])
+            if path.startswith("/files/"):
+                artifact = path.split("/")[-1]
+                fetched.append(artifact)
+                return httpx.Response(200, content=bodies[artifact])
+            if path == "/v1/delivery-attempts":
+                audits.append(json.loads(request.content)["file_id"])
+                # Audit outages must not cause a second native submission.
+                return httpx.Response(503, json={"error": "offline audit unavailable"})
+            self.fail(f"Unexpected offline HTTP path: {path}")
+
+        store = durable.open_store(runtime)
+        records: dict[str, Any] = {}
+
+        async def native(path: str, before_native: Any) -> dict[str, Any]:
+            actual = Path(path)
+            artifact = next(k for k, v in grants.items() if v["filename"] == actual.name)
+            body = await asyncio.to_thread(actual.read_bytes)
+            self.assertEqual(body, bodies[artifact])
+            self.assertEqual(len(body), grants[artifact]["size_bytes"])
+            self.assertEqual(hashlib.sha256(body).hexdigest(), grants[artifact]["sha256"])
+            self.assertEqual(store.get_delivery(records[artifact].key).staged_path, str(actual))
+            self.assertTrue(before_native())
+            if artifact != "main":
+                self.assertEqual(store.get_delivery(records["main"].key).state, "accepted")
+            sent.append(artifact)
+            return {"success": True, "delivery_method": "send_document", "message_id": artifact}
+
+        runtime = replace(
+            runtime,
+            target=replace(
+                runtime.target,
+                capabilities=durable.legacy.DeliveryCapabilities(
+                    document_upload=True, max_document_bytes=1000000, supports_local_path=True
+                ),
+            ),
+            native_document_sender=native,
+            transport=httpx.MockTransport(http),
+        )
+
+        async def until(predicate: Any) -> None:
+            async def poll() -> None:
+                while not predicate():
+                    tick = asyncio.Event()
+                    asyncio.get_running_loop().call_later(0.005, tick.set)
+                    await tick.wait()
+
+            await asyncio.wait_for(poll(), timeout=10)
+
+        async def exercise() -> None:
+            worker = durable.DeliverySupervisor(store)
+            worker.register(runtime)
+            # SI arrives out of order; no staged_path is seeded by the test.
+            for artifact in ["si-3", "si-1", "si-2"]:
+                records[artifact] = durable.ingest_file(store, runtime, grants[artifact])
+                self.assertFalse(records[artifact].staged_path)
+            self.assertTrue(await worker.start())
+            try:
+                await until(lambda: all(r.staged_path for r in store.list_deliveries()))
+                self.assertEqual(sent, [])
+                records["main"] = durable.ingest_file(store, runtime, grants["main"])
+                self.assertFalse(records["main"].staged_path)
+                worker.wake()
+                await until(lambda: all(r.state == "accepted" for r in store.list_deliveries()))
+                await until(lambda: set(audits) == {g["file_id"] for g in grants.values()})
+                self.assertEqual(sent, ["main", "si-1", "si-2", "si-3"])
+                self.assertCountEqual(fetched, bodies)
+                self.assertEqual(len(store.pending_audits(now=float("inf"))), 4)
+                for grant in grants.values():
+                    durable.ingest_file(store, runtime, grant)
+                self.assertIsNone(store.claim_next(worker.owner))
+            finally:
+                await worker.close()
+
+        asyncio.run(exercise())
+        reopened = durable.open_store(runtime)
+        with reopened.sender_lock():
+            reopened.recover("offline-after-restart")
+            self.assertEqual([r.state for r in reopened.list_deliveries()], ["accepted"] * 4)
+            self.assertIsNone(reopened.claim_next("offline-after-restart"))
+        self.assertEqual(sent, ["main", "si-1", "si-2", "si-3"])
+
     def start_child(self, mode: str) -> subprocess.Popen[str]:
         process = subprocess.Popen(
             [sys.executable, str(Path(__file__).resolve()), "--child", mode, str(self.root)],
@@ -559,7 +691,7 @@ class NativeContracts(unittest.TestCase):
         self.assertEqual(installed_commit, os.environ["SCIFETCH_TEST_EXPECTED_COMMIT"])
         print(f"Official installed plugin commit matches event: {installed_commit}")
         source = json.loads((PLUGIN / "SOURCE.json").read_text(encoding="utf-8"))
-        self.assertEqual(source["plugin_version"], "0.2.29")
+        self.assertEqual(source["plugin_version"], "0.2.30")
         for name, digest in source["sha256"].items():
             self.assertEqual(hashlib.sha256((PLUGIN / name).read_bytes()).hexdigest(), digest)
 
