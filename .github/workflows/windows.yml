@@ -10,6 +10,15 @@ permissions:
 
 jobs:
   native:
+    name: Hermes ${{ matrix.hermes-version }} / Windows x64
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - hermes-version: '0.23.0'
+            hermes-commit: 2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19
+          - hermes-version: '0.23.1'
+            hermes-commit: 3b421578588243f920886e6fe79a6faa87ea026e
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
@@ -24,17 +33,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: NousResearch/hermes-agent
-          ref: 2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19
+          ref: ${{ matrix.hermes-commit }}
           path: hermes-host
           persist-credentials: false
       - name: Prepare exact official host and isolated profile
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          git -C hermes-host fetch --depth=1 origin refs/tags/v0.23.0:refs/tags/v0.23.0
+          git -C hermes-host fetch --depth=1 origin refs/tags/v${{ matrix.hermes-version }}:refs/tags/v${{ matrix.hermes-version }}
           if ($LASTEXITCODE -ne 0) { throw 'Could not fetch official release tag' }
-          $commit = git -C hermes-host rev-parse 'v0.23.0^{commit}'
-          if ($commit -ne '2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19') { throw 'Official tag mismatch' }
+          $commit = git -C hermes-host rev-parse 'v${{ matrix.hermes-version }}^{commit}'
+          if ($commit -ne '${{ matrix.hermes-commit }}') { throw 'Official tag mismatch' }
           $homePath = Join-Path $env:RUNNER_TEMP 'hermes-native-home'
           New-Item -ItemType Directory -Path $homePath -Force | Out-Null
           @(
@@ -52,6 +61,7 @@ jobs:
             "GIT_CONFIG_KEY_0=core.autocrlf"
             "GIT_CONFIG_VALUE_0=true"
             "SCIFETCH_TEST_HERMES=$env:GITHUB_WORKSPACE\hermes-host"
+            "SCIFETCH_TEST_HERMES_VERSION=${{ matrix.hermes-version }}"
           ) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           python -m pip install --disable-pip-version-check uv
           if ($LASTEXITCODE -ne 0) { throw 'Could not install uv' }

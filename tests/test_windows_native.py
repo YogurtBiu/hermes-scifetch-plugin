@@ -223,7 +223,7 @@ class NativeContracts(unittest.TestCase):
                 chat_id="chat",
                 user_id="user",
                 chat_type="private",
-                hermes_version="0.23.0",
+                hermes_version=os.environ.get("SCIFETCH_TEST_HERMES_VERSION", "0.23.0"),
             ),
             send_document=lambda path: self.fail("No native sends in a startup/text test"),
         )
@@ -848,14 +848,16 @@ class NativeContracts(unittest.TestCase):
         self.assertEqual(set(loaded.commands_registered), {"scifetch", "paper"})
         self.assertEqual(loaded.tools_registered, ["scifetch_paper_request"])
         self.assertEqual(len(loaded.hooks_registered), 5)
-        self.assertEqual(get_version_info().derived_version, "0.23.0")
+        self.assertEqual(
+            get_version_info().derived_version, os.environ["SCIFETCH_TEST_HERMES_VERSION"]
+        )
         installed_commit = subprocess.check_output(
             ["git", "-C", str(PLUGIN), "rev-parse", "HEAD"], text=True, encoding="utf-8"
         ).strip()
         self.assertEqual(installed_commit, os.environ["SCIFETCH_TEST_EXPECTED_COMMIT"])
         print(f"Official installed plugin commit matches event: {installed_commit}")
         source = json.loads((PLUGIN / "SOURCE.json").read_text(encoding="utf-8"))
-        self.assertEqual(source["plugin_version"], "0.2.31")
+        self.assertEqual(source["plugin_version"], "0.2.32")
         for name, digest in source["sha256"].items():
             self.assertEqual(hashlib.sha256((PLUGIN / name).read_bytes()).hexdigest(), digest)
 

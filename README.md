@@ -74,9 +74,9 @@ inspect an existing request.
 Runtime compatibility includes the exact audited Hermes
 `0.22.5@bf0203a794a07aac3ff764972ab9087baa4e4f4e` point and the other exact
 points listed under [Stock Compatibility](#stock-compatibility). Use Hermes'
-Python environment with `httpx` available. Plugin `0.2.31` includes a Windows native
-backend targeting x64 Hermes `0.23.0` and Python `3.14.9`. It uses OS file locks
-and read-only process queries while macOS/Linux retain the POSIX backend.
+Python environment with `httpx` available. Plugin `0.2.32` targets the exact
+Hermes `0.23.0` and `0.23.1` releases on Windows x64 with Python `3.14.9`.
+It uses OS file locks and read-only process queries while macOS/Linux retain the POSIX backend.
 The [Windows native workflow](https://github.com/YogurtBiu/hermes-scifetch-plugin/actions/workflows/windows.yml)
 records the native installation and runtime contract results for each candidate.
 Installing the plugin and delivering a native file are separate checks. File
@@ -107,8 +107,8 @@ the same target profile. The saved device state and delivery ledger currently
 live inside the installed plugin tree. Updating while a process writes there
 can lose a new receipt during the official directory replacement.
 
-On Hermes `0.23.0`, turn off automatic plugin application before arranging the
-quiet window. This control applies to the profile's plugins. Older audited
+On Hermes `0.23.0` or `0.23.1`, turn off automatic plugin application before
+arranging the quiet window. This control applies to the profile's plugins. Older audited
 `0.22.5` does not provide this command.
 
 ```bash
@@ -320,7 +320,8 @@ The model-free route is validated only at
 `0.20.0@03fa32c92dd445eb64c7f67434dd91b32c40701d`,
 `0.21.2@848075c501`, `0.21.3@6005aa1fd9aac8b1024ace50fec8cd1c85a04bae`,
 `0.22.5@bf0203a794a07aac3ff764972ab9087baa4e4f4e`,
-and the current `0.23.0@2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19` integration;
+`0.23.0@2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`, and
+`0.23.1@3b421578588243f920886e6fe79a6faa87ea026e`;
 these are exact points, not a
 continuous compatibility range. Adding a version means two edits plus two runs:
 add it to `TESTED_HERMES_VERSIONS` in `delivery.py` and to
@@ -494,6 +495,15 @@ When Personal Paper Digest is explicitly enabled:
 
 ## Stock Compatibility
 
+Plugin `0.2.32` adds the exact official Hermes
+`0.23.1@3b421578588243f920886e6fe79a6faa87ea026e` point to both the model-free
+route and native-delivery version sets. Unknown releases and private/prerelease
+suffixes remain closed. The Windows workflow retains `0.23.0` and tests the
+pinned `0.23.1` source host separately, including anonymous Git installation,
+exact installed commit, native filesystem/sender contracts and cold-update
+state retention. Source-host compatibility does not establish that a user's
+Store/MSIX payload is byte-identical or that their Weixin file was received.
+
 Plugin `0.2.27` adds Hermes `0.23.0@2bd378ed1b` to the audited version sets after
 the stock contract suite passed on a read-only export of that host (42 passed).
 Only the two version constants changed; the delivery surface of the Weixin
@@ -555,9 +565,9 @@ existing paper hooks and commands, and do not register the completion command.
 Compatibility tests copy only this plugin into a temporary `HERMES_HOME`; they
 do not inject the SciFetch server `src` tree into `sys.path`. The model-free
 route covers the exact stock points `0.18.2@bd740f2`, `0.20.0@03fa32c9`,
-`0.21.2@848075c501`, `0.21.3@6005aa1fd9`, `0.22.5@bf0203a794`, and the current
-`0.23.0@2bd378ed1b` integration. Tests exercise the real stock gateway
-authorization/ACL and command path, model sentinel, ordered repeated submissions, pre-auth and
+`0.21.2@848075c501`, `0.21.3@6005aa1fd9`, `0.22.5@bf0203a794`,
+`0.23.0@2bd378ed1b`, and `0.23.1@3b421578588` integrations. Tests exercise the
+real stock gateway authorization/ACL and command path, model sentinel, ordered repeated submissions, pre-auth and
 multi-user zero-HTTP behavior, authenticated Weixin/QQ adapter bridges, reload
 stability, and the four-channel delivery matrix. No contract test performs a
 live platform send, and neither stock checkout carries a SciFetch source diff.

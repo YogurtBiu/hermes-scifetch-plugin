@@ -26,7 +26,7 @@ from .environment import runtime_version
 _CONTEXT_TTL_SECONDS: Final[float] = 300.0
 _MAX_CONTEXTS: Final[int] = 256
 _DETERMINISTIC_ROUTE_VERSIONS: Final[frozenset[str]] = frozenset(
-    {"0.18.2", "0.20.0", "0.21.2", "0.21.3", "0.22.5", "0.23.0"}
+    {"0.18.2", "0.20.0", "0.21.2", "0.21.3", "0.22.5", "0.23.0", "0.23.1"}
 )
 _QQBOT_PASSIVE_REPLY_WINDOWS_SECONDS: Final[dict[str, float]] = {
     "c2c": 60.0 * 60.0,

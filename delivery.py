@@ -170,7 +170,7 @@ WEIXIN_NATIVE_UPLOAD_MAX_BYTES: Final[int] = max(
     ),
 )
 TESTED_HERMES_VERSIONS: Final[frozenset[str]] = frozenset(
-    {"0.18.0", "0.18.2", "0.19.0", "0.20.0", "0.21.2", "0.21.3", "0.22.5", "0.23.0"}
+    {"0.18.0", "0.18.2", "0.19.0", "0.20.0", "0.21.2", "0.21.3", "0.22.5", "0.23.0", "0.23.1"}
 )
 _PLATFORM_ALIASES: Final[dict[str, str]] = {
     "wechat": "weixin",
